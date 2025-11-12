@@ -34,6 +34,11 @@ def compute_months(df, order_col, first_col):
     return df
 
 def pivot_metric(agg_df, metric, group_cols):
+    """
+    Create pivot table for metric grouped by `group_cols` and month_number.
+    Ensures M0..M11 columns exist and returns columns ordered as:
+    group_cols + M0..M11
+    """
     pivot = agg_df.pivot_table(
         index=group_cols,
         columns='month_number',
@@ -41,18 +46,33 @@ def pivot_metric(agg_df, metric, group_cols):
         aggfunc='sum',
         fill_value=0
     ).reset_index()
-    # rename month columns to M0..M11
+
+    # rename numeric month columns to M0..M11
     rename = {}
     for c in pivot.columns:
-        if isinstance(c, int) or (isinstance(c, str) and c.isdigit()):
-            rename[c] = f"M{int(c)}"
+        # pivot.columns may contain ints (0,1,..) or strings like '0'
+        try:
+            if isinstance(c, (int,)) or (isinstance(c, str) and c.isdigit()):
+                rename[c] = f"M{int(c)}"
+        except Exception:
+            continue
     pivot = pivot.rename(columns=rename)
-    # ensure M0..M11 exist
+
+    # ensure all M0..M11 columns exist (use DataFrame column check, not dict.setdefault)
     for i in range(12):
-        pivot.setdefault(f"M{i}", 0)
-    # ensure order of columns
-    cols = group_cols + [f"M{i}" for i in range(12)]
-    return pivot[cols]
+        col = f"M{i}"
+        if col not in pivot.columns:
+            pivot[col] = 0
+
+    # ensure ordering of columns: group_cols then M0..M11
+    ordered_cols = list(group_cols) + [f"M{i}" for i in range(12)]
+    # if some grouping columns are missing (unlikely), add them as UNKNOWN
+    for gc in group_cols:
+        if gc not in pivot.columns:
+            pivot[gc] = "UNKNOWN"
+
+    return pivot[ordered_cols]
+
 
 def bytes_to_download(df, fmt='csv'):
     if fmt == 'csv':
